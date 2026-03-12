@@ -969,7 +969,11 @@ def approx_S_abs(mol: _T_chemsystem, nroots: int = 500) -> Matrix[np.float64]:
 
 
 def _sum_across_images(S_slab: Matrix[np.float64], n_ao: int) -> Matrix[np.float64]:
-    return sum([S_slab[:n_ao, i * n_ao : (i + 1) * n_ao] for i in range(9)])
+    ovlp_sum = np.zeros((n_ao, n_ao))
+    for i in range(9):
+        ovlp_sum += S_slab[:n_ao, i * n_ao : (i + 1) * n_ao]
+
+    return ovlp_sum
 
 
 def _ensure_normalization(S_abs: Matrix[np.floating]) -> Matrix[np.float64]:
