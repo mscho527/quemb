@@ -29,6 +29,7 @@ from pyscf.gto import Mole
 from pyscf.gto.moleintor import getints
 from pyscf.pbc import dft as pbc_dft
 from pyscf.pbc.gto import Cell
+from pyscf.pbc.tools import super_cell
 from scipy.linalg import cholesky
 from scipy.special import roots_hermite
 from typing_extensions import assert_never
@@ -926,7 +927,7 @@ def _get_cart_mol(mol: Mole) -> Mole:
 
 
 @timer.timeit
-def approx_S_abs(mol: Mole, nroots: int = 500) -> Matrix[np.float64]:
+def approx_S_abs(mol: _T_chemsystem, nroots: int = 500) -> Matrix[np.float64]:
     r"""Compute the approximated absolute overlap matrix.
 
     The calculation is only exact for uncontracted, cartesian basis functions.
@@ -946,17 +947,29 @@ def approx_S_abs(mol: Mole, nroots: int = 500) -> Matrix[np.float64]:
     nroots :
         Number of roots for the Gauß-Hermite quadrature.
     """  # noqa: E501
-    if mol.cart:
-        s, ctr_mat = _cart_mol_abs_ovlp_matrix(mol, nroots)
-        return abs(ctr_mat.T) @ s @ abs(ctr_mat)
-    else:
-        cart_mol = _get_cart_mol(mol)
-        s, ctr_mat = _cart_mol_abs_ovlp_matrix(cart_mol, nroots)
-        # get the transformation matrix from cartesian basis functions to spherical.
-        cart2spher = cart_mol.cart2sph_coeff(normalized="sp")
-        return _ensure_normalization(
-            abs(cart2spher.T @ ctr_mat.T) @ s @ abs(ctr_mat @ cart2spher)
-        )
+    if isinstance(mol, Mole):
+        if mol.cart:
+            s, ctr_mat = _cart_mol_abs_ovlp_matrix(mol, nroots)
+            return abs(ctr_mat.T) @ s @ abs(ctr_mat)
+        else:
+            cart_mol = _get_cart_mol(mol)
+            s, ctr_mat = _cart_mol_abs_ovlp_matrix(cart_mol, nroots)
+            # get the transformation matrix from cartesian basis functions to spherical.
+            cart2spher = cart_mol.cart2sph_coeff(normalized="sp")
+            return _ensure_normalization(
+                abs(cart2spher.T @ ctr_mat.T) @ s @ abs(ctr_mat @ cart2spher)
+            )
+    elif isinstance(mol, Cell):
+        # Evaluate approximate S_abs from supercell slab
+        assert mol.nkpt == 1, "Only Γ-point calculations are supported for PBC"
+        slab = super_cell(mol, [3, 3, 3]).to_mol()
+        s_slab = approx_S_abs(slab, nroots)
+        # First nao rows & col correspond to original cell, the rest from supercell
+        return _sum_across_images(s_slab, mol.nao)
+
+
+def _sum_across_images(S_slab: Matrix[np.float64], n_ao: int) -> Matrix[np.float64]:
+    return sum([S_slab[:n_ao, i * n_ao : (i + 1) * n_ao] for i in range(9)])
 
 
 def _ensure_normalization(S_abs: Matrix[np.floating]) -> Matrix[np.float64]:
