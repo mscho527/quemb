@@ -304,7 +304,7 @@ class BE:
             )
 
         initialize_fragment_idx = (
-            range(fobj.n_frag)
+            list(range(fobj.n_frag))
             if initialize_fragment_idx is None
             else initialize_fragment_idx
         )
