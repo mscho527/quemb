@@ -1132,7 +1132,9 @@ class BE:
             assert_never(int_transform)
 
     @timer.timeit
-    def _initialize_fragments(self, file_eri: h5py.File, restart: bool, initialize_fragment_idx: list[int]):
+    def _initialize_fragments(
+        self, file_eri: h5py.File, restart: bool, initialize_fragment_idx: list[int]
+    ):
         """
         Processes all molecular fragments by constructing their Fock matrices,
         performing SCF, and computing fragment Hartree–Fock (HF) energies.
@@ -1157,7 +1159,7 @@ class BE:
             If this list is NOT the full list of fragments, HF-in-HF is skipped.
         """
         # check if selective initialization of fragments is requested
-        all_frag_init = (set(initialize_fragment_idx) == set(range(len(self.Fobjs))))
+        all_frag_init = set(initialize_fragment_idx) == set(range(len(self.Fobjs)))
 
         E_hf = 0.0
         for fidx in initialize_fragment_idx:
