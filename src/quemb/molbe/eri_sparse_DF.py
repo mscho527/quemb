@@ -28,7 +28,9 @@ from pyscf.df.addons import make_auxmol
 from pyscf.gto import Mole
 from pyscf.gto.moleintor import getints
 from pyscf.pbc import dft as pbc_dft
+from pyscf.pbc.df.incore import make_auxcell
 from pyscf.pbc.gto import Cell
+from pyscf.pbc.scf import KRHF
 from pyscf.pbc.tools import super_cell
 from scipy.linalg import cholesky
 from scipy.special import roots_hermite
@@ -534,7 +536,7 @@ LPQ = TypeVar("LPQ", Matrix[np.float64], "cpp_transforms.GPU_MatrixHandle")
 
 
 def _run_sparse_df_driver(
-    mf: scf.hf.SCF,
+    mf: scf.hf.SCF | KRHF,
     Fobjs: Sequence[Frags],
     auxbasis: str | None,
     file_eri_handler: h5py.File,
@@ -605,8 +607,13 @@ def _run_sparse_df_driver(
     """
     set_log_level(logging.getLogger().getEffectiveLevel())
 
-    mol: Final[Mole] = mf.mol
-    auxmol: Final[Mole] = make_auxmol(mol, auxbasis=auxbasis)
+    is_periodic: Final[bool] = isinstance(mf, KRHF)
+    mol: Final[_T_chemsystem] = mf.mol  # KRHF also has mol as a Cell
+    auxmol: Final[Mole] = (
+        make_auxcell(mol, auxbasis=auxbasis)
+        if is_periodic
+        else make_auxmol(mol, auxbasis=auxbasis)
+    )
 
     S_abs: Final[Matrix[np.floating]] = approx_S_abs(mol)
 
@@ -961,19 +968,10 @@ def approx_S_abs(mol: _T_chemsystem, nroots: int = 500) -> Matrix[np.float64]:
             )
     elif isinstance(mol, Cell):
         # Evaluate approximate S_abs from supercell slab
-        assert mol.nkpt == 1, "Only Γ-point calculations are supported for PBC"
         slab = super_cell(mol, [3, 3, 3]).to_mol()
         s_slab = approx_S_abs(slab, nroots)
-        # First nao rows & col correspond to original cell, the rest from supercell
-        return _sum_across_images(s_slab, mol.nao)
-
-
-def _sum_across_images(S_slab: Matrix[np.float64], n_ao: int) -> Matrix[np.float64]:
-    ovlp_sum = np.zeros((n_ao, n_ao))
-    for i in range(9):
-        ovlp_sum += S_slab[:n_ao, i * n_ao : (i + 1) * n_ao]
-
-    return ovlp_sum
+        # Take maximum overlap over the images
+        return np.max(s_slab.reshape((27, mol.nao, 27, mol.nao)), axis=(0, 2))
 
 
 def _ensure_normalization(S_abs: Matrix[np.floating]) -> Matrix[np.float64]:
