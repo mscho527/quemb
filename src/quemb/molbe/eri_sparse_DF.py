@@ -19,18 +19,22 @@ from typing import Final, TypeVar, cast
 
 import h5py
 import numpy as np
+import pyscf
 from chemcoord import Cartesian
 from numba import prange  # type: ignore[attr-defined]
 from numba.typed import List
+from packaging.version import parse as parse_version
 from pyscf import dft, gto, scf
 from pyscf.ao2mo.addons import restore
 from pyscf.df.addons import make_auxmol
+from pyscf.df.incore import aux_e2
 from pyscf.gto import Mole
 from pyscf.gto.moleintor import getints
 from pyscf.pbc import dft as pbc_dft
+from pyscf.pbc.df.incore import aux_e2 as pbc_aux_e2
 from pyscf.pbc.df.incore import make_auxcell
 from pyscf.pbc.gto import Cell
-from pyscf.pbc.scf import KRHF
+from pyscf.pbc.scf.khf import KRHF
 from pyscf.pbc.tools import super_cell
 from scipy.linalg import cholesky
 from scipy.special import roots_hermite
@@ -82,7 +86,7 @@ logger = logging.getLogger(__name__)
 
 def _aux_e2(  # type: ignore[no-untyped-def]
     mol: Mole,
-    auxmol_or_auxbasis: Mole | str,
+    auxmol_or_auxbasis: gto.MoleBase | str,
     intor: str = "int3c2e",
     aosym: str = "s1",
     comp: int | None = None,
@@ -94,8 +98,8 @@ def _aux_e2(  # type: ignore[no-untyped-def]
 
     Fixes a bug in the original implementation :func:`pyscf.df.incore.aux_e2`
     that does not accept all valid slices.
-    Replace with the original, as soon as https://github.com/pyscf/pyscf/pull/2734
-    is merged in the stable release.
+    This function has been fixed in pyscf >= 2.9.0 and is kept for backwards
+    compatibility with older pyscf versions.
     """
     if isinstance(auxmol_or_auxbasis, gto.MoleBase):
         auxmol = auxmol_or_auxbasis
@@ -121,6 +125,37 @@ def _aux_e2(  # type: ignore[no-untyped-def]
     return getints(
         intor, atm, bas, env, shls_slice, comp, hermi, aosym, ao_loc, cintopt, out
     )
+
+
+def aux_e2_wrapper(
+    mol: _T_chemsystem,
+    auxmol_or_auxbasis: _T_chemsystem | gto.MoleBase | str,
+    intor: str = "int3c2e",
+    shls_slice: tuple[int, int, int, int, int, int] | list[int] | None = None,
+) -> Tensor3D[np.float64]:
+    if isinstance(mol, Cell):
+        return pbc_aux_e2(
+            mol,
+            auxmol_or_auxbasis,
+            intor=intor,
+            shls_slice=shls_slice,
+        )
+    elif parse_version(pyscf.__version__) < parse_version("2.9.0"):
+        # use fixed version of aux_e2 for older pyscf versions
+        return _aux_e2(
+            mol,
+            auxmol_or_auxbasis,
+            intor=intor,
+            shls_slice=shls_slice,
+        )
+    else:
+        # from pyscf.df.incore
+        return aux_e2(
+            mol,
+            auxmol_or_auxbasis,
+            intor=intor,
+            shls_slice=shls_slice,
+        )
 
 
 _T_old_key = TypeVar("_T_old_key", bound=Hashable)
@@ -244,7 +279,7 @@ def _get_AO_per_AO(
 
 
 def conversions_AO_shell(
-    mol: Mole,
+    mol: _T_chemsystem,
 ) -> tuple[dict[ShellIdx, list[AOIdx]], dict[AOIdx, ShellIdx]]:
     """Return dictionaries that for a shell index return the corresponding AO indices
     and for an AO index return the corresponding shell index.
@@ -411,7 +446,7 @@ def _traverse_reachable(
 
 
 def get_sparse_P_mu_nu(
-    mol: Mole,
+    mol: _T_chemsystem,
     auxmol: Mole,
     exch_reachable: Mapping[AOIdx, Sequence[AOIdx]],
 ) -> SemiSparseSym3DTensor:
@@ -462,7 +497,7 @@ def get_sparse_P_mu_nu(
     for i_shell, reachable in shell_reachable_by_shell.items():
         for start_block, stop_block in get_blocks(reachable):
             integrals = np.asarray(  # type: ignore[call-overload]
-                _aux_e2(
+                aux_e2_wrapper(
                     mol,
                     auxmol,
                     intor="int3c2e",
@@ -608,12 +643,12 @@ def _run_sparse_df_driver(
     set_log_level(logging.getLogger().getEffectiveLevel())
 
     is_periodic: Final[bool] = isinstance(mf, KRHF)
-    mol: Final[_T_chemsystem] = mf.mol  # KRHF also has mol as a Cell
-    auxmol: Final[Mole] = (
-        make_auxcell(mol, auxbasis=auxbasis)
-        if is_periodic
-        else make_auxmol(mol, auxbasis=auxbasis)
-    )
+    if is_periodic:
+        mol = mf.cell
+        auxmol = make_auxcell(mol, auxbasis=auxbasis)
+    else:
+        mol = mf.mol
+        auxmol = make_auxmol(mol, auxbasis=auxbasis)
 
     S_abs: Final[Matrix[np.floating]] = approx_S_abs(mol)
 
