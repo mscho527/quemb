@@ -19,11 +19,11 @@ from typing import Final, TypeVar, cast
 
 import h5py
 import numpy as np
-import pyscf
 from chemcoord import Cartesian
 from numba import prange  # type: ignore[attr-defined]
 from numba.typed import List
 from packaging.version import parse as parse_version
+from pyscf import __version__ as pyscf_version
 from pyscf import dft, gto, scf
 from pyscf.ao2mo.addons import restore
 from pyscf.df.addons import make_auxmol
@@ -140,7 +140,7 @@ def aux_e2_wrapper(
             intor=intor,
             shls_slice=shls_slice,
         )
-    elif parse_version(pyscf.__version__) < parse_version("2.9.0"):
+    elif parse_version(pyscf_version) < parse_version("2.9.0"):
         # use fixed version of aux_e2 for older pyscf versions
         return _aux_e2(
             mol,
