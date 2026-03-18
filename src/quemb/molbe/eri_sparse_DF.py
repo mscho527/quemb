@@ -665,28 +665,32 @@ def _run_sparse_df_driver(
             "One computation of P_mu_nu for every fragment"
             transformed = transform_integral_impl(
                 P_mu_nu,
-                fragobj.TA,
+                fragobj.TA[0].real if is_periodic else fragobj.TA,
                 S_abs,
                 lowtri,
                 MO_coeff_epsilon,
             )
-            eri = restore("4", transformed, fragobj.TA.shape[1])
+            eri = restore("4", transformed, fragobj.TA.shape[-1])
             file_eri_handler.create_dataset(fragobj.dname, data=eri)
     else:
 
         def worker(fragobj: Frags) -> None:
             "On the fly computation of P_mu_nu for every fragment"
-            exch_reachable = _get_AO_per_AO(S_abs, AO_coeff_epsilon, fragobj.TA)
+            exch_reachable = _get_AO_per_AO(
+                S_abs,
+                AO_coeff_epsilon,
+                fragobj.TA[0].real if is_periodic else fragobj.TA,
+            )
             P_mu_nu = get_sparse_P_mu_nu(mol, auxmol, exch_reachable)
 
             transformed = transform_integral_impl(
                 P_mu_nu,
-                fragobj.TA,
+                fragobj.TA[0].real if is_periodic else fragobj.TA,
                 S_abs,
                 lowtri,
                 MO_coeff_epsilon,
             )
-            eri = restore("4", transformed, fragobj.TA.shape[1])
+            eri = restore("4", transformed, fragobj.TA.shape[-1])
             file_eri_handler.create_dataset(fragobj.dname, data=eri)
 
     if n_threads > 1:
