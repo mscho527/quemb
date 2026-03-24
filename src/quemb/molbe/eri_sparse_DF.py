@@ -32,7 +32,7 @@ from pyscf.gto import Mole
 from pyscf.gto.moleintor import getints
 from pyscf.pbc import dft as pbc_dft
 from pyscf.pbc.df.incore import aux_e2 as pbc_aux_e2
-from pyscf.pbc.df.incore import make_auxcell
+from pyscf.pbc.df.incore import fill_2c2e, make_auxcell
 from pyscf.pbc.gto import Cell
 from pyscf.pbc.scf.khf import KRHF
 from pyscf.pbc.tools import super_cell
@@ -134,12 +134,15 @@ def aux_e2_wrapper(
     shls_slice: tuple[int, int, int, int, int, int] | list[int] | None = None,
 ) -> Tensor3D[np.float64]:
     if isinstance(mol, Cell):
-        return pbc_aux_e2(
+        ijP = pbc_aux_e2(
             mol,
             auxmol_or_auxbasis,
             intor=intor,
             shls_slice=shls_slice,
         )
+        ni = shls_slice[1] - shls_slice[0] if shls_slice is not None else mol.nbas
+        nj = shls_slice[3] - shls_slice[2] if shls_slice is not None else mol.nbas
+        return ijP.reshape(ni, nj, -1)  # match shape with molecular
     elif parse_version(pyscf_version) < parse_version("2.9.0"):
         # use fixed version of aux_e2 for older pyscf versions
         return _aux_e2(
@@ -447,7 +450,7 @@ def _traverse_reachable(
 
 def get_sparse_P_mu_nu(
     mol: _T_chemsystem,
-    auxmol: Mole,
+    auxmol: _T_chemsystem,
     exch_reachable: Mapping[AOIdx, Sequence[AOIdx]],
 ) -> SemiSparseSym3DTensor:
     """Return the 3-center 2-electron integrals in a sparse format."""
@@ -646,13 +649,13 @@ def _run_sparse_df_driver(
     if is_periodic:
         mol = mf.cell
         auxmol = make_auxcell(mol, auxbasis=auxbasis)
+        PQ = fill_2c2e(mol, auxmol)  # (P|Q) for pbc
     else:
         mol = mf.mol
         auxmol = make_auxmol(mol, auxbasis=auxbasis)
+        PQ = auxmol.intor("int2c2e")
 
     S_abs: Final[Matrix[np.floating]] = approx_S_abs(mol)
-
-    PQ: Final = auxmol.intor("int2c2e")
     lowtri: Final[LPQ] = build_lowtri_PQ(cholesky(PQ, lower=True))
 
     if precompute_P_mu_nu:
@@ -704,7 +707,7 @@ def _run_sparse_df_driver(
 
 
 def transform_sparse_DF_integral_cpu(
-    mf: scf.hf.SCF,
+    mf: scf.hf.SCF | KRHF,
     Fobjs: Sequence[Frags],
     auxbasis: str | None,
     file_eri_handler: h5py.File,
@@ -728,7 +731,7 @@ def transform_sparse_DF_integral_cpu(
 
 
 def transform_sparse_DF_integral_gpu(
-    mf: scf.hf.SCF,
+    mf: scf.hf.SCF | KRHF,
     Fobjs: Sequence[Frags],
     auxbasis: str | None,
     file_eri_handler: h5py.File,
