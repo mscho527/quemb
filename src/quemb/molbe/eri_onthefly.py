@@ -15,6 +15,33 @@ from quemb.shared.config import settings
 logger = logging.getLogger(__name__)
 
 
+def block_step_size(nfrag, naux, nao, dtype=int):
+    """Internal function to calculate the block step size for the 3-center
+    integrals calculation
+
+    Parameters
+    ----------
+    nfrag : int
+        Number of fragments
+    naux : int
+        Number of auxiliary basis functions
+    nao : int
+        Number of atomic orbitals
+    """
+    return max(
+        1,
+        int(
+            settings.INTEGRAL_TRANSFORM_MAX_MEMORY
+            * 1e9
+            / zeros((1), dtype=dtype).nbytes  # estimate size based on dtype
+            / nao
+            / nao
+            / naux
+            / nfrag  # TODO: nfrag not necessary?
+        ),
+    )  # max(int(500*.24e6/8/nao),1)
+
+
 def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
     r"""Calculate AO density-fitted 3-center integrals on-the-fly and transform to
     Schmidt space for given fragment objects
@@ -69,32 +96,6 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
         )
         logger.debug("Finish calculating (μν|P) for range %s", aux_range)
         return ints
-
-    def block_step_size(nfrag, naux, nao):
-        """Internal function to calculate the block step size for the 3-center
-        integrals calculation
-
-        Parameters
-        ----------
-        nfrag : int
-            Number of fragments
-        naux : int
-            Number of auxiliary basis functions
-        nao : int
-            Number of atomic orbitals
-        """
-        return max(
-            1,
-            int(
-                settings.INTEGRAL_TRANSFORM_MAX_MEMORY
-                * 1e9
-                / 8
-                / nao
-                / nao
-                / naux
-                / nfrag
-            ),
-        )  # max(int(500*.24e6/8/nao),1)
 
     logger.info("Evaluating fragment ERIs on-the-fly using density fitting...")
     logger.info(
