@@ -1,6 +1,6 @@
 import logging
 
-from numpy import complex128, zeros
+from numpy import complex128, sqrt, zeros
 from pyscf import lib
 from pyscf.ao2mo.addons import restore
 from pyscf.pbc.df.df import make_auxcell, make_modrho_basis
@@ -8,11 +8,41 @@ from pyscf.pbc.df.ft_ao import ft_ao, ft_aopair
 from pyscf.pbc.df.gdf_builder import _CCGDFBuilder
 from pyscf.pbc.df.incore import aux_e2
 from pyscf.pbc.tools import get_coulG
-from scipy.linalg import cholesky, solve_triangular
+from scipy.linalg import LinAlgError, cholesky, eigh, solve_triangular
 
 from quemb.molbe.eri_onthefly import block_step_size
 
 logger = logging.getLogger(__name__)
+
+
+def _j2c_cholesky_or_eig(j2c):
+    r"""PBC DF Metric (P|Q) can be non-positive-definite.
+    In this case, we want to fallback to eigenvalue decomposition.
+
+    Parameters
+    ----------
+    j2c : ndarray
+        (P|Q) metric matrix
+
+    Returns
+    -------
+    j2c : ndarray
+        If Cholesky was successful, lower triangle L such that L @ L.T = (P|Q)
+        If fallback to eigenvalue decomposition, V d^{-1/2} V.T
+    ischol : bool
+        Whether Cholesky decomposition was successful or not.
+    """
+    try:
+        low = cholesky(j2c, lower=True)
+        logger.debug("(P|Q) positive definite. Cholesky decomposition successful.")
+        return low, True
+    except LinAlgError:
+        logger.debug(
+            "Cholesky decomposition of (P|Q) failed. Falling back to eigenvalue"
+            "decomposition."
+        )
+        d, V = eigh(j2c)  # V d V.T = (P|Q)
+        return V[:, d > 1e-14] / sqrt(d[d > 1e-14]) @ V[:, d > 1e-14].T, False
 
 
 def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
@@ -125,7 +155,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
         zeros((1, 3))
     )  # (P|Q) accounting for periodic images and G=0 divergence
     # TODO: reexamine kpoint, as (P|Q) depends on momentum transfer
-    low = cholesky(j2c[0], lower=True)
+    j2c, ischol = _j2c_cholesky_or_eig(j2c[0])  # TODO: kpt
 
     end = 0
     Granges = [
@@ -186,7 +216,12 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
     for fragidx in range(len(Fobjs)):
         logger.debug("Fitting B_{ij}^{L} for frag #%d", fragidx)
         b = pqL_frag[fragidx].reshape(auxcell.nao, -1)
-        bb = solve_triangular(low, b, lower=True, overwrite_b=True, check_finite=False)
+        if ischol:
+            bb = solve_triangular(
+                j2c, b, lower=True, overwrite_b=True, check_finite=False
+            )
+        else:
+            bb = j2c @ b
         logger.debug("Finished obtaining B_{ij}^{L} for frag #%d", fragidx)
         eri_nosym = bb.T @ bb
         if (eri_nosym.imag > 1e-6).any():
