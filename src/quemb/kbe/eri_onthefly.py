@@ -116,10 +116,6 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
     coulG *= kws
 
     # Prepare storage for (pq|L) and (pq|G)
-    pqG_frag = [
-        zeros((Gv.shape[0], fragobj.nao, fragobj.nao), dtype=complex128)
-        for fragobj in Fobjs
-    ]
     pqL_frag = [
         zeros((auxcell.nao, fragobj.nao, fragobj.nao), dtype=complex128)
         for fragobj in Fobjs
@@ -146,11 +142,21 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
         # Transform pq (AO) to fragment space (ij)
         start = end
         end += ints.shape[0]
+
+        # Evaluate (L|G)
+        ft_auxL_Gbatch = ft_ao(chgcell, Gv[start:end])
+        ft_auxL_Gbatch = ft_auxL_Gbatch.conj().T
+
         for fragidx in range(len(Fobjs)):
             logger.debug("(μν|G) -> (ij|G) for frag #%d", fragidx)
             Gqi = ints @ Fobjs[fragidx].TA
             Giq = Gqi.transpose(0, 2, 1)
-            pqG_frag[fragidx][start:end, :, :] = Giq @ Fobjs[fragidx].TA.conj()
+            Gij = Giq @ Fobjs[fragidx].TA.conj()
+
+            # add in (L|G) (G|ij), the reciprocal space contribution
+            pqL_frag[fragidx] += (
+                ft_auxL_Gbatch @ Gij.reshape(ints.shape[0], -1)
+            ).reshape(auxcell.nao, Fobjs[fragidx].nao, Fobjs[fragidx].nao)
 
     end = 0
     blockranges = [
@@ -167,10 +173,6 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
         start = end
         end += ints.shape[0]
 
-        # Calculate (G|L) # TODO: can we move this and addition to pbcFS to save memory?
-        # (G|ij) is not large but also not small, as G is typically large
-        ft_auxL = ft_ao(chgcell, Gv, shls_slice=blockranges[idx])
-
         for fragidx in range(len(Fobjs)):
             logger.debug("(μν|P) -> (ij|P) for frag #%d", fragidx)
             Lqi = ints @ Fobjs[fragidx].TA
@@ -178,9 +180,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
             Lij = Liq @ Fobjs[fragidx].TA.conj()
 
             # Add in contributions from the reciprocal space
-            pqL_frag[fragidx][start:end, :, :] = Lij + (
-                ft_auxL.conj().T @ pqG_frag[fragidx].reshape(len(Gv), -1)
-            ).reshape(-1, Fobjs[fragidx].nao, Fobjs[fragidx].nao)
+            pqL_frag[fragidx][start:end, :, :] += Lij
 
     # Fit to get B_{ij}^{L}
     for fragidx in range(len(Fobjs)):

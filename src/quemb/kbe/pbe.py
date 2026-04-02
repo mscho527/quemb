@@ -522,8 +522,21 @@ class BE(Mixin_k_Localize):
 
         if int_transform == "out-core-DF":
             if isinstance(df_source, GDF):
-                # Use out-core transformation using libdmet
-                nprocs = self.nproc // self.ompnum
+                for fobjs_ in self.Fobjs:
+                    eri = get_emb_eri_fast_gdf(
+                        self.mf.cell,
+                        self.mf.with_df,
+                        t_reversal_symm=True,
+                        symmetry=4,
+                        C_ao_eo=fobjs_.TA,
+                    )[0]
+
+                    file_eri.create_dataset(fobjs_.dname, data=eri)
+                    eri = ao2mo.restore(8, eri, fobjs_.nao)
+                    fobjs_.cons_fock(self.hf_veff, self.S, self.hf_dm, eri_=eri)
+            else:
+                # Use cderi (Path)
+                nprocs = max(1, self.nproc // self.ompnum)
                 os.system("export OMP_NUM_THREADS=" + str(self.ompnum))
                 with ProcessPool(nprocs) as pool_:
                     results = []
@@ -544,22 +557,13 @@ class BE(Mixin_k_Localize):
                 for frg in range(self.fobj.n_frag):
                     file_eri.create_dataset(self.Fobjs[frg].dname, data=eris[frg])
                 del eris
-            else:
-                for fobjs_ in self.Fobjs:
-                    eri = get_emb_eri_fast_gdf(
-                        self.mf.cell,
-                        self.mf.with_df,
-                        t_reversal_symm=True,
-                        symmetry=4,
-                        C_ao_eo=fobjs_.TA,
-                    )[0]
-
-                    file_eri.create_dataset(fobjs_.dname, data=eri)
-                    eri = ao2mo.restore(8, eri, fobjs_.nao)
-                    fobjs_.cons_fock(self.hf_veff, self.S, self.hf_dm, eri_=eri)
         elif int_transform == "int-direct-DF":
             ensure(bool(self.auxbasis), "`auxbasis` has to be defined.")
             integral_direct_DF(self.mf, self.Fobjs, file_eri, auxbasis=self.auxbasis)
+            for fobjs_ in self.Fobjs:
+                eri = array(file_eri.get(fobjs_.dname))
+                eri = ao2mo.restore(8, eri, fobjs_.nao)
+                fobjs_.cons_fock(self.hf_veff, self.S, self.hf_dm, eri_=eri)
 
     def initialize(self, compute_hf: bool, restart: bool = False) -> None:
         """
@@ -605,7 +609,6 @@ class BE(Mixin_k_Localize):
             nprocs = self.nproc // self.ompnum
             os.system("export OMP_NUM_THREADS=" + str(self.ompnum))
 
-            nprocs = self.nproc // self.ompnum
             with ProcessPool(nprocs) as pool_:
                 results = []
                 for frg in range(self.fobj.n_frag):
