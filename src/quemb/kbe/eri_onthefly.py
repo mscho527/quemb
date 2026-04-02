@@ -21,7 +21,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
 
     Parameters
     ----------
-    mf : pyscf.scf.hf.KRHF
+    mf : pyscf.pbc.scf.khf.KRHF
         Mean-field object for the chemical system (typically BE.mf)
     Fobjs : list of quemb.molbe.autofrag.FragPart
         List containing fragment objects (typically BE.Fobjs)
