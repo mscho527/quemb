@@ -150,7 +150,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
             logger.debug("(μν|G) -> (ij|G) for frag #%d", fragidx)
             Gqi = ints @ Fobjs[fragidx].TA
             Giq = Gqi.transpose(0, 2, 1)
-            pqG_frag[fragidx][start:end, :, :] = Giq @ Fobjs[fragidx].TA
+            pqG_frag[fragidx][start:end, :, :] = Giq @ Fobjs[fragidx].TA.conj()
 
     end = 0
     blockranges = [
@@ -175,7 +175,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
             logger.debug("(μν|P) -> (ij|P) for frag #%d", fragidx)
             Lqi = ints @ Fobjs[fragidx].TA
             Liq = Lqi.transpose(0, 2, 1)
-            Lij = Liq @ Fobjs[fragidx].TA
+            Lij = Liq @ Fobjs[fragidx].TA.conj()
 
             # Add in contributions from the reciprocal space
             pqL_frag[fragidx][start:end, :, :] = Lij + (
