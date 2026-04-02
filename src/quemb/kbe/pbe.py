@@ -639,7 +639,7 @@ class BE(Mixin_k_Localize):
 
         # Call ERI transform
         self._eri_transform(
-            int_transform=self.int_transform,
+            int_transform=self.integral_transform,
             df_source=self.cderi if self.cderi else self.mf.with_df,
             file_eri=file_eri,
         )
