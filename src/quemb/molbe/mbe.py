@@ -897,14 +897,9 @@ class BE:
         if method == "QN":
             # Prepare the initial Jacobian matrix
             if jac_solver == "Numerical":
-                if only_chem:
-                    J0 = self.get_be_error_jacobian_numerical(
-                        only_chem, solver, relax_density, solver_args, use_cumulant
-                    )
-                else:
-                    raise NotImplementedError(
-                        "Numerical Jacobian is only implemented for only_chem=True"
-                    )
+                J0 = self.get_be_error_jacobian_numerical(
+                    only_chem, solver, relax_density, solver_args, use_cumulant
+                )
             else:
                 if only_chem:
                     J0 = array([[0.0]])
@@ -953,8 +948,6 @@ class BE:
         """
         Obtain the Jacobian matrix for BE Optimization using numerical differentiation.
         (First-order Central Finite Differences)
-        Note that this function is only implemented for the case
-        where :python:`only_chem=True`.
         """
         step_size = 1e-6  # from frankenstein
 
@@ -988,7 +981,7 @@ class BE:
                     scratch_dir=self.scratch_dir,
                     solver_args=solver_args,
                     use_cumulant=use_cumulant,
-                    eeval=False,
+                    eeval=True,  # Fix after #264 resolves
                     return_vec=True,
                 )[1]
 
@@ -1000,9 +993,18 @@ class BE:
                 ]
             )
         else:
-            raise NotImplementedError(
-                "Numerical Jacobian is only implemented for only_chem=True"
-            )
+            # TODO consider parallel dispatch
+            n_param = len(self.pot)
+            J = zeros((n_param, n_param))
+            for i in range(n_param):
+                x_plus = [0.0] * n_param
+                x_minus = [0.0] * n_param
+                x_plus[i] = step_size
+                x_minus[i] = -step_size
+                J[:, i] = (array(be_func_err(x_plus)) - array(be_func_err(x_minus))) / (
+                    2 * step_size
+                )
+            return J
 
     def print_ini(self):
         """
