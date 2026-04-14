@@ -2,7 +2,7 @@
 
 import logging
 
-from numpy import moveaxis, transpose, zeros
+from numpy import dtype, moveaxis, transpose, zeros
 from pyscf import lib
 from pyscf.ao2mo.addons import restore
 from pyscf.df.addons import make_auxmol
@@ -15,7 +15,7 @@ from quemb.shared.config import settings
 logger = logging.getLogger(__name__)
 
 
-def block_step_size(nfrag, naux, nao, dtype=int):
+def block_step_size(nfrag, naux, nao, datatype=float):
     """Internal function to calculate the block step size for the 3-center
     integrals calculation
 
@@ -33,7 +33,7 @@ def block_step_size(nfrag, naux, nao, dtype=int):
         int(
             settings.INTEGRAL_TRANSFORM_MAX_MEMORY
             * 1e9
-            / zeros((1), dtype=dtype).nbytes  # estimate size based on dtype
+            / dtype(datatype).itemsize  # estimate size based on dtype
             / nao
             / nao
             / naux

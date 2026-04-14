@@ -1,6 +1,6 @@
 import logging
 
-from numpy import complex128, sqrt, zeros
+from numpy import abs, complex128, sqrt, zeros
 from pyscf import lib
 from pyscf.ao2mo.addons import restore
 from pyscf.pbc.df.df import make_auxcell, make_modrho_basis
@@ -42,7 +42,7 @@ def _j2c_cholesky_or_eig(j2c):
             "decomposition."
         )
         d, V = eigh(j2c)  # V d V.T = (P|Q)
-        return V[:, d > 1e-14] / sqrt(d[d > 1e-14]) @ V[:, d > 1e-14].T, False
+        return V[:, d > 1e-14] / sqrt(d[d > 1e-14]) @ V[:, d > 1e-14].conj().T, False
 
 
 def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
@@ -163,7 +163,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
         for x, y in lib.prange(
             0,
             len(Gv),
-            block_step_size(len(Fobjs), len(Gv), mf.cell.nao, dtype=complex128),
+            block_step_size(len(Fobjs), len(Gv), mf.cell.nao, datatype=complex128),
         )
     ]
 
@@ -224,7 +224,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
             bb = j2c @ b
         logger.debug("Finished obtaining B_{ij}^{L} for frag #%d", fragidx)
         eri_nosym = bb.T @ bb
-        if (eri_nosym.imag > 1e-6).any():
+        if (abs(eri_nosym.imag) > 1e-6).any():
             raise ValueError(
                 f"Imaginary part of ERI is larger than 1e-6 for frag #{fragidx}."
             )
