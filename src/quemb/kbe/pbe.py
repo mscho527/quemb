@@ -15,6 +15,7 @@ from pyscf import ao2mo
 from pyscf.pbc import df, gto, scf
 from pyscf.pbc.df.df import GDF
 from pyscf.pbc.df.df_jk import _ewald_exxdiv_for_G0
+from pyscf.pbc.lib.kpts_helper import is_zero
 
 from quemb.kbe.eri_onthefly import integral_direct_DF
 from quemb.kbe.fragment import FragPart
@@ -223,6 +224,11 @@ class BE(Mixin_k_Localize):
             print("exxdiv = ", exxdiv, "not implemented!", flush=True)
             print("Energy may diverse.", flush=True)
             print(flush=True)
+
+        if int_transform == "int-direct-DF" and not is_zero(kpts):
+            raise NotImplementedError(
+                "k-point sampled ERI not implemented for int-direct-DF."
+            )
 
         self.frozen_core = fobj.frozen_core
         self.ncore = 0

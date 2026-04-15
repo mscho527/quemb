@@ -101,9 +101,12 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
             shls_slice=shls_slice,
         )  # Remove the part calculated in the reciprocal space to avoid double counting
 
+        assert ints.shape[0] == mf.cell.nao**2
+
         logger.debug("Finish calculating (μν|P) for range %s", aux_range)
 
-        return ints.reshape(-1, mf.cell.nao, mf.cell.nao)  # TODO: ij pair to i, j
+        # (nao*nao, naux) -> (naux, nao, nao)
+        return ints.T.reshape(-1, mf.cell.nao, mf.cell.nao)
 
     def calculate_Gpq_pbcFS(pw_range):
         r"""Internal function to calculate the 3-center integrals for a given range of
@@ -111,7 +114,7 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
 
         Parameters
         ----------
-        aux_range : tuple of int
+        pw_range : tuple of int
             (start index, end index) of the plane wave basis functions
             to calculate the 3-center integrals, i.e.
             (:math:`(pq|G)`) with G :math:`\in [start, end)` is returned
@@ -156,6 +159,10 @@ def integral_direct_DF(mf, Fobjs, file_eri, auxbasis=None):
     )  # (P|Q) accounting for periodic images and G=0 divergence
     # TODO: reexamine kpoint, as (P|Q) depends on momentum transfer
     j2c, ischol = _j2c_cholesky_or_eig(j2c[0])  # TODO: kpt
+    # If ischol, j2c is triangular matrix from Cholesky decomposition
+    # Otherwise, this is (P|Q)^(-1/2) from eigendecomposition
+    # We intentionally reuse j2c name because this variable has the memory scaling
+    # of (N_AO^2), which is how this ERI routine scales memory-wise.
 
     end = 0
     Granges = [
